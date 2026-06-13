@@ -1,158 +1,88 @@
 # UpGrid — Compute Orchestrator
 
-A deployed, split-screen demo: the **same demand event** hits a software-only baseline and an
-**UpGrid** SST+BESS cabinet. The baseline breaches the 5.2 MW grid envelope; UpGrid stays flat. And
-**Claude Opus 4.8** narrates the economic accept / defer / shed / battery decisions live, citing the
-real bid, headroom, state-of-charge, and price multiplier on every job.
+A live demo showing why owning the power-electronics layer lets an AI data center run more compute than its grid connection allows — with Claude Opus 4.8 making and explaining the economic dispatch decisions in real time.
 
-Read [BRIEF.md](BRIEF.md) for the problem and product, and [RUBRIC.md](RUBRIC.md) for the scoring
-criteria (which double as the verification checklist).
-
-> **Architecture in one line:** Hardware control of the cabinet is *deterministic*; Claude Opus 4.8
-> is the *economic layer only* and never controls hardware. The browser calls a server-side Lambda;
-> the Lambda calls Claude Platform on AWS. The API key lives only in the Lambda's environment.
-
-## Live deployment
-
-- **App:** https://main.d2fxjnzxfyc78p.amplifyapp.com (AWS Amplify Hosting, region us-east-2)
-- **Inference path:** browser → **API Gateway HTTP API** → Lambda `upgrid-inference` → Claude Platform
-  on AWS (`/v1/messages`, Opus 4.8). An API Gateway sits in front of the Lambda because this AWS
-  account's org guardrail blocks anonymous public **Lambda Function URLs**; the API Gateway invoke
-  path (the `apigateway` service principal, not anonymous `InvokeFunctionUrl`) is permitted. The
-  Lambda is unchanged either way — `VITE_INFERENCE_URL` just points at whichever public front the
-  account allows. Flip the toggle to **Live** to see real Opus 4.8 rationales; the temp workspace key
-  is short-lived, so after it expires the app falls back to **Emulated** automatically.
+Built for the Claude Fable 5 Build Day. Hosted on AWS Amplify; inference runs through Claude Platform on AWS (Anthropic's native Messages API, accessed via the AWS account).
 
 ---
 
-## Stack
+## What this is
 
-| Layer       | Choice                                                                              |
-| ----------- | ----------------------------------------------------------------------------------- |
-| Frontend    | Vite + React + TypeScript, single-page app                                          |
-| Hosting     | AWS Amplify Hosting, building from GitHub (`amplify.yml`, artifact `dist`)           |
-| Inference   | AWS Lambda (Function URL) → **Claude Platform on AWS** native Messages API           |
-| Model       | Claude **Opus 4.8** (`claude-opus-4-8`) — one-line constant `MODEL_ID` in the Lambda |
+A browser-based simulation that demonstrates the core thesis behind ChargeWheel's UpGrid platform: in AI data centers, the binding constraint is no longer chips, it's grid power. Utility interconnection upgrades take years, so the operators who win are the ones who can run more compute behind the power they already have. UpGrid does this by integrating a solid-state transformer and battery storage into one cabinet, then letting an AI agent decide how to spend that scarce power profitably.
 
-**Claude Platform on AWS is not Amazon Bedrock.** This calls the *native* Anthropic Messages API
-shape (`POST /v1/messages`) at the regional endpoint `https://aws-external-anthropic.<region>.api.aws`,
-authenticated with the workspace key in the `x-api-key` header. It is **not** Bedrock and **not**
-`InvokeModel`, and the model id carries **no** `anthropic.` prefix.
+## Why it's needed
 
----
+The advantage UpGrid claims is physical, and therefore hard to show on a slide. A software-only competitor can also "orchestrate compute and batteries," so the differentiation isn't obvious until you can see two systems respond to the same event and diverge. The demo exists to make that divergence visible and undeniable — and to prove the AI layer is doing real reasoning, not following a script, by letting anyone perturb the scenario live.
 
-## Run locally
+## How it works
 
-```bash
-npm install
-npm run dev      # http://localhost:5173  — runs in Emulated mode out of the box
-```
+The simulation runs two systems side by side against one shared stream of electricity demand and incoming compute jobs.
 
-```bash
-npm run build    # production build → dist/
-npm run preview  # serve the built dist/ locally
-npm run typecheck # tsc --noEmit (optional; the production build does not gate on types)
-```
+The first is a software-only orchestrator — the kind of system that manages power equipment it doesn't own. It can only react to demand surges at the grid meter, and only as fast as third-party hardware allows, so when a transient hits, its power draw briefly breaches the site's interconnection limit and service quality dips.
 
-With no `VITE_INFERENCE_URL` set, the app runs entirely in **Emulated** mode — a local deterministic
-decision function with the same rule set as the model. No backend or key is required to see the full
-demo. Flip the **Live / Emulated** toggle to Live once a Lambda URL is wired up (below).
+The second is UpGrid. Because it owns the integrated transformer-plus-battery stack, it absorbs the same surge on its internal DC bus before the grid ever registers it. The grid sees a flat line; nothing breaches.
+
+Sitting on top of UpGrid is the economic layer, powered by Claude Opus 4.8. Every time a new compute job arrives, the model is given the live state of the site — what the job pays, how much power headroom remains, how full the battery is, and whether energy is currently in a premium-price window — and decides whether to accept it, defer it, shed it, or hold it on battery. It returns a one-sentence rationale for every decision, so the result is an auditable log a customer or utility could actually read, not a black box.
+
+A clear division of responsibility runs through the whole thing: the hard, safety-critical control (keeping the site inside its power envelope) is deterministic, while the model is confined to the economic judgment of how to make the most money inside that envelope. The model never controls hardware.
+
+## The outcome
+
+Watching it run, you see the two systems start identical and split apart the moment stress is applied: the baseline overshoots its limit and loses jobs it couldn't physically protect, while UpGrid stays flat and Opus 4.8 visibly reasons about which jobs to keep, defer, or drop — and explains why, in plain language. A running revenue tally shows UpGrid capturing more value from the same power, and three live controls let anyone inject a demand spike, a price surge, or a battery fault to confirm the agent is responding to real conditions rather than a canned demo.
+
+The takeaway: the orchestration software is the visible part, but the moat is the hardware underneath it — and the AI is what turns that hardware advantage into dollars, legibly enough to put in front of a customer.
 
 ---
 
-## The Lambda + Claude Platform on AWS
+## Architecture
 
-Source: [`lambda/index.mjs`](lambda/index.mjs). Node.js 20+ runtime (uses the built-in global
-`fetch`), zero npm dependencies. The browser POSTs the live simulation state to the Lambda; the
-Lambda forwards a Messages API request to Claude Platform on AWS and returns the parsed
-`{ action, reason }` decision. The browser never sees the endpoint or the key.
+| Layer | Role |
+| :---- | :---- |
+| React \+ Vite frontend | Runs the two-system simulation, the live charts, the decision log, and the perturbation controls entirely in the browser. |
+| AWS Lambda | Server-side proxy that holds the credential and forwards each decision request to Claude. The browser never talks to the model directly and never sees the key. |
+| Claude Platform on AWS | Anthropic's native Messages API, reached through the AWS account at the regional endpoint. Returns the accept/defer/shed/battery decision and its rationale. |
+| AWS Amplify Hosting | Builds the app from this GitHub repo on push and serves the live URL. |
 
-**What it does:**
+The deterministic simulation (power envelope, battery state, revenue) lives entirely in the frontend. Only the economic decisions are delegated to the model, and only through the Lambda.
 
-1. Accepts a JSON body: `{ job, envelopeKw, committedKw, headroomKw, dcSoc, peakWindow, priceMult }`.
-2. Builds a Messages API request for `MODEL_ID` (`claude-opus-4-8`) with a system prompt encoding the
-   economic decision rule, and `max_tokens: 4096`.
-3. POSTs to `https://aws-external-anthropic.${region}/v1/messages` with headers `x-api-key`,
-   `anthropic-version: 2023-06-01`, `content-type: application/json`.
-4. Parses the model's raw-JSON reply defensively and returns `{ action, reason, source: "live" }`.
-5. Handles CORS preflight so the browser Function URL call works.
+## Live vs. Emulated mode
 
-The model id is a single, clearly-commented constant at the top of the file:
+The app has a visible toggle between two modes:
 
-```js
-// === MODEL: one-line change. Confirm this id is in your workspace's model list. ===
-const MODEL_ID = "claude-opus-4-8"; // Claude Opus 4.8
-```
+- **Live · Opus 4.8** — each decision is a real call to Claude Opus 4.8 through the Lambda. The rationale shown is the model's own output.  
+- **Emulated** — a local, deterministic decision function using the same rule set. No backend or key required.
 
-> **Confirm the exact id** is available in your workspace via the Models API
-> (`GET /v1/models`) or the Console model list before going live. If your workspace pins a different
-> Opus 4.8 string, change this one line.
+Emulated mode is the demo-safe default: it guarantees the simulation runs even with no network. Live mode is for showing genuine model reasoning when connectivity is reliable.
 
-### Deploy the Lambda (Function URL **or** API Gateway)
+## Running locally
 
-You can deploy the function any way you like (console, SAM, CDK). Minimal console path:
-
-1. **Lambda → Create function** → Author from scratch → Runtime **Node.js 20.x** (or later).
-2. Paste the contents of `lambda/index.mjs` as the handler (`index.mjs`, handler `index.handler`).
-3. Give the browser a public front-door and copy its URL into `VITE_INFERENCE_URL`:
-   - **Function URL** (simplest): Configuration → Function URL → Create → Auth type **NONE**, CORS
-     allow-origin `*`; **or**
-   - **API Gateway HTTP API** (use this if your AWS org blocks public Function URLs — some Control
-     Tower / SCP guardrails do): create an HTTP API with a Lambda proxy integration + CORS, and add a
-     `lambda:InvokeFunction` permission for `apigateway.amazonaws.com`. This is what the live
-     deployment above uses.
-4. **Configuration → Environment variables** → set the variables in the table below (including
-   `ANTHROPIC_WORKSPACE_ID` — required).
-
----
+1. Install dependencies and start the dev server (`npm install`, then `npm run dev`).  
+2. The app runs immediately in **Emulated** mode with no further setup.  
+3. To exercise **Live** mode locally, provide the environment variables below to the Lambda/dev backend (see `.env.example` for the variable names — values are never committed).
 
 ## Environment variables
 
-| Variable                | Where it's set            | Secret? | Purpose                                                                 |
-| ----------------------- | ------------------------- | ------- | ---------------------------------------------------------------------- |
-| `VITE_INFERENCE_URL`    | Amplify app (build env)   | No      | Public inference URL the browser POSTs to (Lambda Function URL or API Gateway). Unset → Emulated mode. |
-| `ANTHROPIC_AWS_API_KEY` | **Lambda only**           | **YES** | Workspace key, sent as `x-api-key`. Never in the browser or repo.       |
-| `CLAUDE_AWS_REGION`     | Lambda                    | No      | Workspace region. **us-east-2** (US East / Ohio).                       |
-| `AWS_REGION`            | Lambda (usually preset)   | No      | Fallback region if `CLAUDE_AWS_REGION` is unset.                        |
-| `ANTHROPIC_WORKSPACE_ID`| **Lambda**                | No      | Workspace id (`wrkspc_…`). **Required** — the endpoint rejects calls without the `anthropic-workspace-id` header. Not a secret. |
+These are set in the AWS Amplify console (or your local backend env). See `.env.example` for names only.
 
-**The key is never in the repo.** `.gitignore` excludes all `.env*` files except
-[`.env.example`](.env.example), which lists variable **names only**. The browser bundle contains only
-`VITE_INFERENCE_URL`.
+| Variable | Purpose |
+| :---- | :---- |
+| `ANTHROPIC_AWS_API_KEY` | Workspace API key for Claude Platform on AWS. Supplied separately; lives only in the Lambda environment. |
+| `CLAUDE_AWS_REGION` | Region of the Claude Platform on AWS workspace  |
+| `ANTHROPIC_WORKSPACE_ID` | Workspace identifier, if required by the endpoint/SDK. |
 
----
+The model id is kept in a single `MODEL_ID` constant (default `claude-opus-4-8`). Confirm that id appears in your workspace's model list before relying on Live mode; if not, change the one constant to the current Opus build.
 
-## Deploy on AWS Amplify Hosting (GitHub → Amplify)
+## Deploying to AWS Amplify
 
-1. Push this repo to GitHub on `main` (see the project handoff notes / `git` commands).
-2. **AWS Amplify → Hosting → New app → Deploy from GitHub** → authorize GitHub → pick this repo and
-   the `main` branch.
-3. Amplify auto-detects `amplify.yml`. Confirm build settings: build command `npm run build`,
-   artifact base directory `dist`.
-4. **App settings → Environment variables** → add `VITE_INFERENCE_URL` = your Lambda Function URL.
-   (Leave it blank to ship the demo in Emulated mode first; add it later to enable Live.)
-5. **Save and deploy.** Amplify builds the Vite app and serves `dist/` at the app URL.
-6. Open the live URL, flip the toggle to **Live**, and trigger a decision — the rationale shown is the
-   real Opus 4.8 output.
+1. **Amplify Hosting → New app → connect this GitHub repo and branch.** The GitHub authorization happens in the console.  
+2. **Confirm build settings** match `amplify.yml`   
+3. **Set environment variables** on the app/function: `ANTHROPIC_AWS_API_KEY` (pasted in the console), `CLAUDE_AWS_REGION`, and `ANTHROPIC_WORKSPACE_ID` if needed.  
+4. **Deploy**, then confirm a Live-mode decision returns a real Opus 4.8 rationale.
 
-The Anthropic key is configured on the **Lambda**, not on Amplify. The two are wired together only by
-the public Function URL in `VITE_INFERENCE_URL`.
+## Security
 
----
+The credential exists only as a Lambda environment variable — never in the browser, never in the repository. A `.gitignore` excludes local env files and a `.env.example` documents variable names without values. The frontend reaches the model solely through the Lambda proxy.
 
-## How the simulation works
+## A note on the simulation
 
-- A `setInterval` (~700 ms) advances both systems each tick. The latest state is mirrored in a ref so
-  the interval closure always reads current values; the interval is cleared on pause/unmount.
-- Each tick computes a wandering base demand (sine + bounded noise) plus any active spike. The
-  **baseline** AC trace overshoots the 5200 kW envelope during spikes; the **UpGrid** AC trace is
-  clamped at/below the envelope (the cabinet buffers the transient on the DC bus).
-- Roughly every third tick a job is spawned and Opus 4.8 (or the Emulated fallback) decides
-  accept / defer / shed / battery, with a one-sentence rationale that drives the decision log and
-  revenue. Calls are async, throttled to one in flight at a time, and never block the UI.
-- Revenue is `bid × priceMult × (kW/1000) × durationHours`; UpGrid captures full value unless it
-  sheds, the baseline captures a discounted value and loses sheddable jobs during spikes. Values
-  never go negative; SoC and QoS clamp; the log caps at ~40 entries.
-
-> Simulation only. Hardware control is deterministic; Opus 4.8 is on the economic layer only. The
-> cabinet ships to a 5.2 MW site in July.
+The numbers are illustrative and the scenario is simulated. The hardware control is deterministic, as it is in the real cabinet; Claude Opus 4.8 is on the economic layer only.
