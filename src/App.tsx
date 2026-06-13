@@ -71,8 +71,8 @@ export default function App() {
           response="~ms"
           caption={
             <>
-              Buffers the transient on the DC bus in milliseconds — the AC draw the utility meters{' '}
-              <strong>never crosses the envelope</strong>.
+              Buffers the transient on the DC bus in milliseconds — the AC draw the utility meters
+              see <strong>never crosses the envelope</strong>.
             </>
           }
         />

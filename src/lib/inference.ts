@@ -32,23 +32,33 @@ export function parseDecision(raw: unknown): Decision {
   return { action, reason };
 }
 
+/** Hard timeout for a Live call so a slow/hung backend can never stall the simulation. */
+const LIVE_TIMEOUT_MS = 12000;
+
 /**
  * Call the Lambda → Claude Platform on AWS for a live Opus 4.8 decision.
  * The browser only ever talks to the Lambda; it never holds the key or the endpoint.
+ * Aborts after LIVE_TIMEOUT_MS so the caller's in-flight guard always clears and falls back.
  */
-export async function decideLive(ctx: DecisionCtx, signal?: AbortSignal): Promise<Decision> {
+export async function decideLive(ctx: DecisionCtx): Promise<Decision> {
   if (!INFERENCE_URL) throw new Error('no inference url configured');
-  const res = await fetch(INFERENCE_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(ctx),
-    signal,
-  });
-  if (!res.ok) throw new Error(`lambda ${res.status}`);
-  const data = (await res.json()) as Record<string, unknown>;
-  // Lambda returns { action, reason, source } (already parsed) or { raw: "..." }.
-  if (typeof data.action === 'string' && typeof data.reason === 'string') {
-    return parseDecision(data);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LIVE_TIMEOUT_MS);
+  try {
+    const res = await fetch(INFERENCE_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ctx),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`lambda ${res.status}`);
+    const data = (await res.json()) as Record<string, unknown>;
+    // Lambda returns { action, reason, source } (already parsed) or { raw: "..." }.
+    if (typeof data.action === 'string' && typeof data.reason === 'string') {
+      return parseDecision(data);
+    }
+    return parseDecision(data.raw ?? data);
+  } finally {
+    clearTimeout(timer);
   }
-  return parseDecision(data.raw ?? data);
 }

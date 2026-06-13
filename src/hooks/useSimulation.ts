@@ -71,8 +71,9 @@ function initialState(): SimState {
     log: [],
     revenue: { base: 0, dc: 0 },
     perturbation: null,
-    // Default to Live when a backend is configured; otherwise Emulated.
-    mode: hasLiveBackend() ? 'live' : 'emulated',
+    // Emulated is the demo-safe default: the decision log always populates from the local rule
+    // set even with no network. Live (real Opus 4.8) is one toggle away.
+    mode: 'emulated',
     lastSource: null,
     baseBreach: false,
     dcBreach: false,
@@ -193,9 +194,10 @@ export function useSimulation(): Simulation {
       // UpGrid (DC-native): transient buffered on the DC bus → AC clamped at/below envelope, flat.
       const dcAc = spikeActive ? ENVELOPE_KW - 30 : Math.min(BASE_CENTER + sine, ENVELOPE_KW - 30);
 
+      // QoS visibly dips into the 80s while the baseline breaches, and recovers when calm.
       const baseQoS = baseBreach
-        ? clamp(prev.baseQoS - 5, 70, 100)
-        : clamp(prev.baseQoS + 1.6, 70, 100);
+        ? clamp(prev.baseQoS - 2.0, 84, 100)
+        : clamp(prev.baseQoS + 1.6, 84, 100);
       const baseSoc = baseBreach
         ? clamp(prev.baseSoc - 1.2, BASE_SOC_FLOOR, 100)
         : clamp(prev.baseSoc + 0.5, BASE_SOC_FLOOR, 100);
@@ -305,7 +307,7 @@ export function useSimulation(): Simulation {
         dcSoc: clamp(prev.dcSoc - 40, DC_SOC_FLOOR, DC_SOC_CAP),
         // The shared fault also dents the baseline's third-party storage and QoS, so both panels move.
         baseSoc: clamp(prev.baseSoc - 20, BASE_SOC_FLOOR, 100),
-        baseQoS: clamp(prev.baseQoS - 3, 70, 100),
+        baseQoS: clamp(prev.baseQoS - 3, 80, 100),
         perturbation: {
           type: 'fault',
           label: 'Battery fault · −40% SoC',
@@ -321,6 +323,24 @@ export function useSimulation(): Simulation {
     inFlightRef.current = false;
     setState(initialState());
   }, []);
+
+  // Auto-demo: never sit in a sleepy nominal state. Fire a demand spike a couple seconds after
+  // start so the baseline visibly breaches on first look, then recur (mostly spikes, an occasional
+  // price window) with calm gaps in between. Cleared on pause/unmount.
+  useEffect(() => {
+    if (!state.running) return;
+    const firstSpike = setTimeout(() => triggerSpike(), 2500);
+    let n = 0;
+    const cadence = setInterval(() => {
+      n += 1;
+      if (n % 3 === 0) triggerPrice();
+      else triggerSpike();
+    }, 21000);
+    return () => {
+      clearTimeout(firstSpike);
+      clearInterval(cadence);
+    };
+  }, [state.running, triggerSpike, triggerPrice]);
 
   const deltaPct =
     state.revenue.base > 0
