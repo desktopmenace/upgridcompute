@@ -1,4 +1,4 @@
-# UpGrid — Compute Orchestrator · RUBRIC
+# UpGrid — DC Native Compute Orchestrator · RUBRIC
 
 > The scoring criteria for this hackathon submission. This file is **also the adversarial
 > verification checklist**: each criterion below is verified independently, in a clean context, by a

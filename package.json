@@ -1,9 +1,9 @@
 {
-  "name": "upgrid-compute-orchestrator",
+  "name": "upgrid-dc-native-compute-orchestrator",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "UpGrid — Compute Orchestrator: split-screen SST+BESS demo with Claude Opus 4.8 as the economic layer.",
+  "description": "UpGrid — DC Native Compute Orchestrator: split-screen SST+BESS demo with Claude Opus 4.8 as the economic layer.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

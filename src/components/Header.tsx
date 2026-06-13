@@ -16,7 +16,7 @@ export function Header({ mode, lastSource, liveConfigured }: HeaderProps) {
             <span className="spark" aria-hidden="true">
               ⌁
             </span>{' '}
-            UpGrid <span className="sub">Compute Orchestrator</span>
+            UpGrid <span className="sub">DC Native Compute Orchestrator</span>
           </div>
           <div className="header__tagline">
             An SST+BESS cabinet buffers data-center demand transients on the DC bus in milliseconds —

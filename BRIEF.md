@@ -1,4 +1,4 @@
-# UpGrid — Compute Orchestrator · BRIEF
+# UpGrid — DC Native Compute Orchestrator · BRIEF
 
 > Hackathon submission. This file is written **first**, before any code, and committed before the app.
 

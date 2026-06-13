@@ -1,4 +1,4 @@
-# UpGrid — Compute Orchestrator
+# UpGrid — DC Native Compute Orchestrator
 
 A live demo showing why owning the power-electronics layer lets an AI data center run more compute than its grid connection allows — with Claude Opus 4.8 making and explaining the economic dispatch decisions in real time.
 
