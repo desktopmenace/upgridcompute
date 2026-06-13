@@ -19,6 +19,18 @@ export default function App() {
     <div className="app">
       <Header mode={sim.mode} lastSource={sim.lastSource} liveConfigured={sim.liveConfigured} />
 
+      <ControlBar
+        running={sim.running}
+        toggleRun={sim.toggleRun}
+        onSpike={sim.triggerSpike}
+        onPrice={sim.triggerPrice}
+        onFault={sim.triggerFault}
+        activeLabel={sim.perturbation?.label ?? null}
+        mode={sim.mode}
+        setMode={sim.setMode}
+        liveConfigured={sim.liveConfigured}
+      />
+
       <div className="event-strip">
         <span className="label">Same demand event</span>
         <span className="rule" aria-hidden="true" />
@@ -82,18 +94,6 @@ export default function App() {
         <RevenuePanel base={sim.revenue.base} dc={sim.revenue.dc} deltaPct={sim.deltaPct} />
         <DecisionLog log={sim.log} />
       </div>
-
-      <ControlBar
-        running={sim.running}
-        toggleRun={sim.toggleRun}
-        onSpike={sim.triggerSpike}
-        onPrice={sim.triggerPrice}
-        onFault={sim.triggerFault}
-        activeLabel={sim.perturbation?.label ?? null}
-        mode={sim.mode}
-        setMode={sim.setMode}
-        liveConfigured={sim.liveConfigured}
-      />
 
       <footer className="footer">
         <strong>Simulation.</strong> Hardware control is deterministic; Opus&nbsp;4.8 is on the
