@@ -166,34 +166,39 @@ export function useSimulation(): Simulation {
     inFlightRef.current = false;
   }, []);
 
-  // Advance one tick. Impure inputs (noise, job spawn) are computed once outside the updater so
-  // the updater stays pure; async-updated fields (log, revenue) are preserved via `...prev`.
+  // Advance one tick. The decision is computed from the latest snapshot (stateRef) and fired
+  // DIRECTLY — never captured inside the setState updater, because React does not run the updater
+  // synchronously, so anything assigned in it is unavailable to code right after setState().
   const doTick = useCallback(() => {
+    const s = stateRef.current;
+    const nextTick = s.tick + 1;
     const noise = (Math.random() - 0.5) * 220; // ±110 kW
-    const willDecide = (stateRef.current.tick + 1) % DECISION_EVERY === 0 && !inFlightRef.current;
-    const job = willDecide ? spawnJob() : null;
 
-    let captured: { job: Job; ctx: DecisionCtx; contended: boolean } | null = null;
+    // Perturbation / pricing resolved from the latest snapshot.
+    let activePerturbation = s.perturbation;
+    if (activePerturbation && nextTick >= activePerturbation.untilTick) activePerturbation = null;
+    const priceMult = activePerturbation?.priceMult ?? 1;
+    const spikeKw = activePerturbation?.type === 'spike' ? activePerturbation.spikeKw : 0;
+    const spikeActive = spikeKw > 0;
+    const peakWindow = priceMult > 1;
 
+    const sine = 320 * Math.sin(nextTick / 6);
+    // Baseline (software-only): AC draw = full demand incl. spike → overshoots the envelope.
+    const baseAc = Math.max(2600, BASE_CENTER + sine + noise + spikeKw);
+    const baseBreach = baseAc > ENVELOPE_KW;
+    // UpGrid (DC-native): transient buffered on the DC bus → AC clamped at/below envelope, flat.
+    const dcAc = spikeActive ? ENVELOPE_KW - 30 : Math.min(BASE_CENTER + sine, ENVELOPE_KW - 30);
+    const committedKw = Math.round(dcAc);
+    const headroomKw = Math.max(0, ENVELOPE_KW - committedKw);
+    const dcSocNext = spikeActive
+      ? clamp(s.dcSoc - 3.0, DC_SOC_FLOOR, DC_SOC_CAP)
+      : clamp(s.dcSoc + 1.2, DC_SOC_FLOOR, DC_SOC_CAP);
+
+    // State transition uses prev so async-updated fields (log, revenue) and trigger-updated fields
+    // are never clobbered.
     setState((prev) => {
-      const nextTick = prev.tick + 1;
-
       let perturbation = prev.perturbation;
       if (perturbation && nextTick >= perturbation.untilTick) perturbation = null;
-      const priceMult = perturbation?.priceMult ?? 1;
-      const spikeKw = perturbation?.type === 'spike' ? perturbation.spikeKw : 0;
-      const spikeActive = spikeKw > 0;
-      const peakWindow = priceMult > 1;
-
-      const sine = 320 * Math.sin(nextTick / 6);
-
-      // Baseline (software-only): AC draw = full demand incl. spike → overshoots envelope.
-      const baseAc = Math.max(2600, BASE_CENTER + sine + noise + spikeKw);
-      const baseBreach = baseAc > ENVELOPE_KW;
-
-      // UpGrid (DC-native): transient buffered on the DC bus → AC clamped at/below envelope, flat.
-      const dcAc = spikeActive ? ENVELOPE_KW - 30 : Math.min(BASE_CENTER + sine, ENVELOPE_KW - 30);
-
       // QoS visibly dips into the 80s while the baseline breaches, and recovers when calm.
       const baseQoS = baseBreach
         ? clamp(prev.baseQoS - 2.0, 84, 100)
@@ -204,31 +209,11 @@ export function useSimulation(): Simulation {
       const dcSoc = spikeActive
         ? clamp(prev.dcSoc - 3.0, DC_SOC_FLOOR, DC_SOC_CAP)
         : clamp(prev.dcSoc + 1.2, DC_SOC_FLOOR, DC_SOC_CAP);
-
-      const committedKw = Math.round(dcAc);
-      const headroomKw = Math.max(0, ENVELOPE_KW - committedKw);
-
-      if (willDecide && job) {
-        captured = {
-          job,
-          ctx: {
-            job: { label: job.label, bid: job.bid, kw: job.kw, sheddable: job.sheddable },
-            envelopeKw: ENVELOPE_KW,
-            committedKw,
-            headroomKw,
-            dcSoc: Math.round(dcSoc),
-            peakWindow,
-            priceMult,
-          },
-          contended: spikeActive || baseBreach,
-        };
-      }
-
       return {
         ...prev,
         tick: nextTick,
         perturbation,
-        priceMult,
+        priceMult: perturbation?.priceMult ?? 1,
         baseTrace: [...prev.baseTrace, baseAc].slice(-TRACE_LEN),
         dcTrace: [...prev.dcTrace, dcAc].slice(-TRACE_LEN),
         baseQoS,
@@ -241,9 +226,19 @@ export function useSimulation(): Simulation {
       };
     });
 
-    if (captured) {
-      const c = captured as { job: Job; ctx: DecisionCtx; contended: boolean };
-      runDecision(c.job, c.ctx, c.contended);
+    // Economic step ~every 3rd tick, one call in flight at a time — fired directly, not via setState.
+    if (nextTick % DECISION_EVERY === 0 && !inFlightRef.current) {
+      const job = spawnJob();
+      const ctx: DecisionCtx = {
+        job: { label: job.label, bid: job.bid, kw: job.kw, sheddable: job.sheddable },
+        envelopeKw: ENVELOPE_KW,
+        committedKw,
+        headroomKw,
+        dcSoc: Math.round(dcSocNext),
+        peakWindow,
+        priceMult,
+      };
+      runDecision(job, ctx, spikeActive || baseBreach);
     }
   }, [runDecision]);
 
