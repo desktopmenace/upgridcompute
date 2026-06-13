@@ -135,7 +135,7 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
   gap: var(--gutter);
-  align-items: stretch;
+  align-items: start;
   margin-top: var(--gutter);
 }
 .app__main {
@@ -147,8 +147,13 @@ button {
 .app__main > .event-strip {
   margin: 0;
 }
-/* Sidebar stretches to the main column's height; the log fills it and scrolls internally. */
+/* Sticky, viewport-tall sidebar: it stays in view as the page scrolls and the log scrolls
+   INTERNALLY (rather than growing the page), so the full decision history is reachable. */
 .app__side {
+  position: sticky;
+  top: var(--space-4);
+  align-self: start;
+  height: calc(100vh - 2 * var(--space-4));
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -818,8 +823,14 @@ button {
   .app__grid {
     grid-template-columns: 1fr;
   }
+  /* Stacked (not a sidebar) on narrow screens: normal flow, bounded scroll. */
+  .app__side {
+    position: static;
+    height: auto;
+  }
   .app__side .log__scroll {
     max-height: 320px;
+    flex: none;
   }
 }
 @media (max-width: 900px) {
