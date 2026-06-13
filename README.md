@@ -12,6 +12,17 @@ criteria (which double as the verification checklist).
 > is the *economic layer only* and never controls hardware. The browser calls a server-side Lambda;
 > the Lambda calls Claude Platform on AWS. The API key lives only in the Lambda's environment.
 
+## Live deployment
+
+- **App:** https://main.d2fxjnzxfyc78p.amplifyapp.com (AWS Amplify Hosting, region us-east-2)
+- **Inference path:** browser → **API Gateway HTTP API** → Lambda `upgrid-inference` → Claude Platform
+  on AWS (`/v1/messages`, Opus 4.8). An API Gateway sits in front of the Lambda because this AWS
+  account's org guardrail blocks anonymous public **Lambda Function URLs**; the API Gateway invoke
+  path (the `apigateway` service principal, not anonymous `InvokeFunctionUrl`) is permitted. The
+  Lambda is unchanged either way — `VITE_INFERENCE_URL` just points at whichever public front the
+  account allows. Flip the toggle to **Live** to see real Opus 4.8 rationales; the temp workspace key
+  is short-lived, so after it expires the app falls back to **Emulated** automatically.
+
 ---
 
 ## Stack
@@ -77,16 +88,21 @@ const MODEL_ID = "claude-opus-4-8"; // Claude Opus 4.8
 > (`GET /v1/models`) or the Console model list before going live. If your workspace pins a different
 > Opus 4.8 string, change this one line.
 
-### Deploy the Lambda (Function URL)
+### Deploy the Lambda (Function URL **or** API Gateway)
 
 You can deploy the function any way you like (console, SAM, CDK). Minimal console path:
 
 1. **Lambda → Create function** → Author from scratch → Runtime **Node.js 20.x** (or later).
 2. Paste the contents of `lambda/index.mjs` as the handler (`index.mjs`, handler `index.handler`).
-3. **Configuration → Function URL → Create** → Auth type **NONE** (the function holds no secret the
-   caller could abuse beyond the model call; restrict via CORS / throttling as needed).
-4. **Configuration → Environment variables** → set the variables in the table below.
-5. Copy the Function URL — you'll set it as `VITE_INFERENCE_URL` on the Amplify app.
+3. Give the browser a public front-door and copy its URL into `VITE_INFERENCE_URL`:
+   - **Function URL** (simplest): Configuration → Function URL → Create → Auth type **NONE**, CORS
+     allow-origin `*`; **or**
+   - **API Gateway HTTP API** (use this if your AWS org blocks public Function URLs — some Control
+     Tower / SCP guardrails do): create an HTTP API with a Lambda proxy integration + CORS, and add a
+     `lambda:InvokeFunction` permission for `apigateway.amazonaws.com`. This is what the live
+     deployment above uses.
+4. **Configuration → Environment variables** → set the variables in the table below (including
+   `ANTHROPIC_WORKSPACE_ID` — required).
 
 ---
 
@@ -94,11 +110,11 @@ You can deploy the function any way you like (console, SAM, CDK). Minimal consol
 
 | Variable                | Where it's set            | Secret? | Purpose                                                                 |
 | ----------------------- | ------------------------- | ------- | ---------------------------------------------------------------------- |
-| `VITE_INFERENCE_URL`    | Amplify app (build env)   | No      | Lambda Function URL the browser POSTs to. Unset → Emulated mode.        |
+| `VITE_INFERENCE_URL`    | Amplify app (build env)   | No      | Public inference URL the browser POSTs to (Lambda Function URL or API Gateway). Unset → Emulated mode. |
 | `ANTHROPIC_AWS_API_KEY` | **Lambda only**           | **YES** | Workspace key, sent as `x-api-key`. Never in the browser or repo.       |
 | `CLAUDE_AWS_REGION`     | Lambda                    | No      | Workspace region. **us-east-2** (US East / Ohio).                       |
 | `AWS_REGION`            | Lambda (usually preset)   | No      | Fallback region if `CLAUDE_AWS_REGION` is unset.                        |
-| `ANTHROPIC_WORKSPACE_ID`| Lambda (if required)      | No      | Workspace id, if the endpoint requires it (short-term keys are usually workspace-scoped). |
+| `ANTHROPIC_WORKSPACE_ID`| **Lambda**                | No      | Workspace id (`wrkspc_…`). **Required** — the endpoint rejects calls without the `anthropic-workspace-id` header. Not a secret. |
 
 **The key is never in the repo.** `.gitignore` excludes all `.env*` files except
 [`.env.example`](.env.example), which lists variable **names only**. The browser bundle contains only
