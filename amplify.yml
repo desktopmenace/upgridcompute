@@ -1,0 +1,24 @@
+# AWS Amplify Hosting build settings for the UpGrid SPA (Vite + React).
+# Amplify runs this at build time; the static site is served from dist/.
+#
+# Environment variables are injected by Amplify into the build container. The only
+# build-time variable this frontend reads is VITE_INFERENCE_URL (the Lambda Function URL).
+# It is NOT a secret. The Anthropic key (ANTHROPIC_AWS_API_KEY) is set ONLY on the Lambda,
+# never here and never in the bundle. See README.md "Environment variables".
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    # Vite outputs the production build to dist/ — this is what Amplify Hosting serves.
+    baseDirectory: dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
