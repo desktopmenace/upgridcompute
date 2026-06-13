@@ -31,7 +31,9 @@ export default function App() {
         liveConfigured={sim.liveConfigured}
       />
 
-      <div className="event-strip">
+      <div className="app__grid">
+        <div className="app__main">
+          <div className="event-strip">
         <span className="label">Same demand event</span>
         <span className="rule" aria-hidden="true" />
         <span className={`active${sim.perturbation ? '' : ' calm'}`}>
@@ -90,9 +92,12 @@ export default function App() {
         />
       </div>
 
-      <div className="lower">
-        <RevenuePanel base={sim.revenue.base} dc={sim.revenue.dc} deltaPct={sim.deltaPct} />
-        <DecisionLog log={sim.log} />
+          <RevenuePanel base={sim.revenue.base} dc={sim.revenue.dc} deltaPct={sim.deltaPct} />
+        </div>
+
+        <aside className="app__side" aria-label="Decision log">
+          <DecisionLog log={sim.log} />
+        </aside>
       </div>
 
       <footer className="footer">
