@@ -1,0 +1,8 @@
+{
+  "name": "upgrid-inference-lambda",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "UpGrid economic-layer Lambda: browser → Lambda → Claude Platform on AWS native Messages API (Opus 4.8). No dependencies; Node.js 20+ global fetch.",
+  "main": "index.mjs"
+}
